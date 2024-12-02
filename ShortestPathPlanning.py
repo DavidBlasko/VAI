@@ -1,10 +1,11 @@
 import pygame
 import heapq
+import threading  # Na podporu reálnom čase vizualizácie
 
 # Constants
-WIDTH, HEIGHT = 800, 800
+WIDTH, HEIGHT = 900, 800  # Pridaný priestor na bočné GUI
 ROWS, COLS = 50, 50
-TILE_SIZE = min(WIDTH / COLS, HEIGHT / ROWS)  # Ensure tiles fit the screen perfectly
+TILE_SIZE = min((WIDTH - 200) / COLS, HEIGHT / ROWS)  # Priestor na bočné tlačidlá
 WHITE, BLACK, RED, GREEN, BLUE, GREY, ORANGE, TURQUOISE = (255, 255, 255), (0, 0, 0), (255, 0, 0), (0, 255, 0), (0, 0, 255), (128, 128, 128), (255, 165, 0), (64, 224, 208)
 
 # Initialize Pygame
@@ -57,7 +58,6 @@ class Node:
 
     def update_neighbors(self, grid):
         self.neighbors = []
-        # Check surrounding nodes
         if self.row > 0 and not grid[self.row - 1][self.col].is_obstacle():  # Up
             self.neighbors.append(grid[self.row - 1][self.col])
         if self.row < ROWS - 1 and not grid[self.row + 1][self.col].is_obstacle():  # Down
@@ -82,12 +82,48 @@ def reconstruct_path(came_from, current):
     while current in came_from:
         current = came_from[current]
         current.set_path()
-        pygame.display.update()  # Aktualizuj obrazovku po každom kroku
+        pygame.display.update()
 
 
 def heuristic(node1, node2):
-    # Manhattan distance
     return abs(node1.row - node2.row) + abs(node1.col - node2.col)
+
+
+def draw_buttons():
+    font = pygame.font.SysFont("arial", 20)
+    buttons = [
+        {"rect": pygame.Rect(WIDTH - 190, 50, 180, 50), "text": "A* Algorithm", "color": GREEN, "action": "A*"},
+        {"rect": pygame.Rect(WIDTH - 190, 120, 180, 50), "text": "Dijkstra", "color": BLUE, "action": "Dijkstra"},
+        {"rect": pygame.Rect(WIDTH - 190, 190, 180, 50), "text": "Greedy BFS", "color": TURQUOISE, "action": "Greedy BFS"},
+        {"rect": pygame.Rect(WIDTH - 190, 260, 180, 50), "text": "Reset Map", "color": RED, "action": "Reset"},
+    ]
+
+    for button in buttons:
+        pygame.draw.rect(screen, button["color"], button["rect"])
+        text = font.render(button["text"], True, WHITE)
+        screen.blit(text, (button["rect"].x + 10, button["rect"].y + 15))
+
+    return buttons
+
+
+def handle_button_click(buttons, pos):
+    for button in buttons:
+        if button["rect"].collidepoint(pos):
+            return button["action"]
+    return None
+
+
+def algorithm_execution(grid, algorithm, start, end):
+    for row in grid:
+        for node in row:
+            node.update_neighbors(grid)
+
+    if algorithm == "A*":
+        astar(grid, start, end)
+    elif algorithm == "Dijkstra":
+        dijkstra(grid, start, end)
+    elif algorithm == "Greedy BFS":
+        greedy_bfs(grid, start, end)
 
 
 def dijkstra(grid, start, end):
@@ -95,29 +131,37 @@ def dijkstra(grid, start, end):
     heapq.heappush(open_set, (0, id(start), start))
     came_from = {}
     g_score = {node: float("inf") for row in grid for node in row}
+    visited = set()
+
     g_score[start] = 0
 
     while open_set:
         current = heapq.heappop(open_set)[2]
+
+        if current in visited:
+            continue
+        visited.add(current)
 
         if current == end:
             reconstruct_path(came_from, end)
             return True
 
         for neighbor in current.neighbors:
-            temp_g_score = g_score[current] + 1
-            if temp_g_score < g_score[neighbor]:
-                came_from[neighbor] = current
-                g_score[neighbor] = temp_g_score
-                heapq.heappush(open_set, (g_score[neighbor], id(neighbor), neighbor))
-                neighbor.set_open()
+            if neighbor not in visited and not neighbor.is_obstacle():
+                temp_g_score = g_score[current] + 1
+
+                if temp_g_score < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = temp_g_score
+                    heapq.heappush(open_set, (g_score[neighbor], id(neighbor), neighbor))
+                    neighbor.set_open()
 
         draw_grid()
-        pygame.display.update()  # Aktualizuj obrazovku
+        pygame.display.update()
         if current != start:
             current.set_closed()
 
-        pygame.time.delay(30)  # Oneskorí vykresľovanie, aby si videl postup
+        pygame.time.delay(30)
 
     return False
 
@@ -148,11 +192,11 @@ def astar(grid, start, end):
                 neighbor.set_open()
 
         draw_grid()
-        pygame.display.update()  # Aktualizuj obrazovku
+        pygame.display.update()
         if current != start:
             current.set_closed()
 
-        pygame.time.delay(30)  # Oneskorí vykresľovanie, aby si videl postup
+        pygame.time.delay(30)
 
     return False
 
@@ -181,11 +225,11 @@ def greedy_bfs(grid, start, end):
                 neighbor.set_open()
 
         draw_grid()
-        pygame.display.update()  # Aktualizuj obrazovku
+        pygame.display.update()
         if current != start:
             current.set_closed()
 
-        pygame.time.delay(30)  # Oneskorí vykresľovanie, aby si videl postup
+        pygame.time.delay(30)
 
     return False
 
@@ -193,8 +237,8 @@ def greedy_bfs(grid, start, end):
 def main():
     grid = make_grid()
     start, end = None, None
+    algorithm = None
     running = True
-    algorithm = None  # Na začiatku nie je vybraný žiadny algoritmus
 
     while running:
         screen.fill(WHITE)
@@ -204,19 +248,21 @@ def main():
                 node.draw()
 
         draw_grid()
+        buttons = draw_buttons()
         pygame.display.flip()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                pygame.quit()
+                return
 
-            if pygame.mouse.get_pressed()[0]:  # Left click
+            if pygame.mouse.get_pressed()[0]:
                 pos = pygame.mouse.get_pos()
-                row = int(pos[1] // TILE_SIZE)
-                col = int(pos[0] // TILE_SIZE)
-                if 0 <= row < ROWS and 0 <= col < COLS:
+                if pos[0] < WIDTH - 200:  # Kliknutie v mriežku
+                    row, col = int(pos[1] // TILE_SIZE), int(pos[0] // TILE_SIZE)
                     node = grid[row][col]
-                    if not start and node != end:
+                    if not start:
                         start = node
                         start.set_start()
                     elif not end and node != start:
@@ -224,44 +270,18 @@ def main():
                         end.set_end()
                     elif node != start and node != end:
                         node.set_obstacle()
-
-            if pygame.mouse.get_pressed()[2]:  # Right click
-                pos = pygame.mouse.get_pos()
-                row = int(pos[1] // TILE_SIZE)
-                col = int(pos[0] // TILE_SIZE)
-                if 0 <= row < ROWS and 0 <= col < COLS:
-                    node = grid[row][col]
-                    node.reset()
-                    if node == start:
-                        start = None
-                    elif node == end:
-                        end = None
+                else:  # Kliknutie na tlačidlá
+                    action = handle_button_click(buttons, pos)
+                    if action == "Reset":
+                        grid = make_grid()
+                        start, end = None, None
+                    else:
+                        algorithm = action
 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_a and start and end:  # A pre A*
-                    algorithm = 'A*'
-                elif event.key == pygame.K_d and start and end:  # D pre Dijkstra
-                    algorithm = 'Dijkstra'
-                elif event.key == pygame.K_g and start and end:  # G pre Greedy BFS
-                    algorithm = 'Greedy BFS'
-                elif event.key == pygame.K_r:  # Reset
-                    start, end = None, None
-                    grid = make_grid()
-                    algorithm = None  # Reset algoritmus
-
-        # Spusti algoritmus na základe vybraného typu
-        if algorithm and start and end:
-            for row in grid:
-                for node in row:
-                    node.update_neighbors(grid)
-
-            if algorithm == 'A*':
-                astar(grid, start, end)
-            elif algorithm == 'Dijkstra':
-                dijkstra(grid, start, end)
-            elif algorithm == 'Greedy BFS':
-                greedy_bfs(grid, start, end)
-            algorithm = None  # Reset algoritmus po spustení
+                if event.key == pygame.K_SPACE and start and end:
+                    thread = threading.Thread(target=algorithm_execution, args=(grid, algorithm, start, end))
+                    thread.start()
 
 
 if __name__ == "__main__":
